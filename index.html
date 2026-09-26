@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CleanCSV</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f7f7f5; --panel:#ffffff; --ink:#1c1c1c; --muted:#6b6b6b;
+  --line:#e4e2dd; --accent:#b5673a; --accent-ink:#ffffff; --danger:#b3432f;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#171512; --panel:#211f1b; --ink:#efe9e0; --muted:#a39b8e; --line:#332f28; --accent:#d98a5c; --accent-ink:#1c1408; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px 16px 48px}
+.wrap{max-width:840px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+h1{font-size:1.4rem;margin:0;letter-spacing:-.01em}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:.92rem;margin-top:4px}
+.lang-toggle{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:4px;display:flex;gap:2px}
+.lang-toggle button{border:none;background:transparent;color:var(--muted);padding:6px 10px;border-radius:6px;font-size:.82rem;cursor:pointer}
+.lang-toggle button.active{background:var(--accent);color:var(--accent-ink)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover,.drop.drag{border-color:var(--accent)}
+.drop p{margin:4px 0;color:var(--muted);font-size:.9rem}
+input[type=file]{display:none}
+select,input[type=password],input[type=text]{
+  border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);
+  padding:9px 10px;font-size:.88rem;font-family:inherit;
+}
+textarea{
+  width:100%;min-height:70px;border:1px solid var(--line);border-radius:10px;background:var(--bg);
+  color:var(--ink);padding:12px;font-size:.95rem;font-family:inherit;resize:vertical;margin-top:10px;
+}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.provider-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.provider-row label{font-size:.8rem;color:var(--muted)}
+button.primary{background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px 20px;font-size:.95rem;font-weight:600;cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 18px;font-size:.9rem;cursor:pointer}
+.status{font-size:.85rem;color:var(--muted);margin-top:8px;min-height:18px}
+.status.err{color:var(--danger)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:14px;max-height:360px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:.82rem}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:var(--bg);position:sticky;top:0;color:var(--muted);font-weight:600}
+.meta{font-size:.8rem;color:var(--muted);margin-top:6px}
+.hidden{display:none}
+footer{text-align:center;color:var(--muted);font-size:.78rem;margin-top:20px}
+.note{font-size:.78rem;color:var(--muted);margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Clean<span>CSV</span></h1>
+      <div class="sub" id="tagline">Tarayıcıda çalışan, veri temizleme aracı</div>
+    </div>
+    <div class="lang-toggle">
+      <button id="btn-tr" class="active">TR</button>
+      <button id="btn-en">EN</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="provider-row">
+      <label id="lbl-provider">Sağlayıcı</label>
+      <select id="provider">
+        <option value="anthropic">Claude</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="ollama">Ollama (yerel)</option>
+      </select>
+      <input type="text" id="model" placeholder="model">
+      <input type="password" id="apikey" placeholder="API anahtarınız" style="flex:1;min-width:200px">
+      <input type="text" id="baseurl" placeholder="http://localhost:11434" style="flex:1;min-width:200px" class="hidden">
+    </div>
+    <div class="note" id="key-note">Anahtarınız yalnızca bu tarayıcıda, localStorage'da saklanır ve doğrudan seçtiğiniz sağlayıcıya gönderilir. Sunucu yok, veri saklama yok.</div>
+    <div class="note hidden" id="ollama-note">Ollama'yı çalıştırın (<code>ollama serve</code>) ve tarayıcıdan erişime izin verin: <code>OLLAMA_ORIGINS=*</code> ortam değişkeniyle başlatın. Veriniz bu modda bilgisayarınızdan hiç çıkmaz.</div>
+  </div>
+
+  <div class="card">
+    <div class="drop" id="drop">
+      <p><strong id="drop-title">Dosyanızı buraya bırakın</strong></p>
+      <p id="drop-sub">veya tıklayıp seçin — .csv, .xlsx, .xls</p>
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+    </div>
+    <div class="status" id="file-status"></div>
+  </div>
+
+  <div class="card hidden" id="work-card">
+    <div id="preview-label" class="meta"></div>
+    <div class="tablewrap"><table id="preview-table"></table></div>
+    <textarea id="instructions" placeholder="Ne yapılmasını istiyorsunuz? Örn: isimlerdeki boşlukları kırp, tarihleri ISO formatına çevir, boş şehir hücrelerini 'Bilinmiyor' ile doldur..."></textarea>
+    <div class="row">
+      <button class="primary" id="clean-btn">Temizle</button>
+      <button class="ghost hidden" id="download-btn">İndir (.csv)</button>
+      <button class="ghost hidden" id="reset-btn">Yeni dosya</button>
+    </div>
+    <div class="status" id="clean-status"></div>
+  </div>
+
+  <footer>Verileriniz tarayıcınızdan çıkmaz; yalnızca temizleme isteği seçtiğiniz sağlayıcıya gönderilir.</footer>
+</div>
+
+<script>
+let lang = 'tr';
+const T = {
+  tr:{tagline:'Tarayıcıda çalışan, veri temizleme aracı', dropTitle:'Dosyanızı buraya bırakın', dropSub:'veya tıklayıp seçin — .csv, .xlsx, .xls',
+      clean:'Temizle', cleaning:'Temizleniyor…', download:'İndir (.csv)', reset:'Yeni dosya', provider:'Sağlayıcı',
+      keyNote:"Anahtarınız yalnızca bu tarayıcıda, localStorage'da saklanır ve doğrudan seçtiğiniz sağlayıcıya gönderilir. Sunucu yok, veri saklama yok.",
+      preview:(n,total)=>`${total} satır algılandı — ilk ${n} satır önizleniyor`, noFile:'Desteklenmeyen dosya türü.',
+      parsed:(r,c)=>`${r} satır, ${c} sütun yüklendi.`, needInstr:'Lütfen ne yapılmasını istediğinizi yazın.',
+      needKey:'Lütfen bir API anahtarı girin.', errCall:'İstek başarısız oldu, anahtarınızı ve modeli kontrol edin.',
+      errParse:'Sonuç anlaşılamadı, tekrar deneyin.', cleaned:'Temizlendi ✓', tooBig:'Not: dosya büyük, ilk 800 satır işlendi.',
+      ollamaNote:"Ollama'yı çalıştırın (<code>ollama serve</code>) ve tarayıcıdan erişime izin verin: <code>OLLAMA_ORIGINS=*</code> ortam değişkeniyle başlatın. Veriniz bu modda bilgisayarınızdan hiç çıkmaz.",
+      needUrl:'Lütfen Ollama adresini girin.', errOllama:'Ollama’ya ulaşılamadı — çalıştığından ve OLLAMA_ORIGINS ayarından emin olun.'},
+  en:{tagline:'A browser-based, AI-powered data cleaner', dropTitle:'Drop your file here', dropSub:'or click to choose — .csv, .xlsx, .xls',
+      clean:'Clean it up', cleaning:'Cleaning…', download:'Download (.csv)', reset:'New file', provider:'Provider',
+      keyNote:'Your key stays in this browser (localStorage) and is sent directly to the provider you chose. No server, no retention.',
+      preview:(n,total)=>`${total} rows detected — previewing first ${n}`, noFile:'Unsupported file type.',
+      parsed:(r,c)=>`Loaded ${r} rows, ${c} columns.`, needInstr:'Please describe what you want fixed.',
+      needKey:'Please enter an API key.', errCall:'Request failed — check your key and model.',
+      errParse:'Could not parse the result, please try again.', cleaned:'Cleaned ✓', tooBig:'Note: file is large, first 800 rows processed.',
+      ollamaNote:"Run Ollama (<code>ollama serve</code>) and allow browser access by starting it with <code>OLLAMA_ORIGINS=*</code>. Your data never leaves your machine in this mode.",
+      needUrl:'Please enter your Ollama address.', errOllama:'Could not reach Ollama — make sure it is running and OLLAMA_ORIGINS is set.'}
+};
+const DEFAULT_MODEL = {anthropic:'claude-sonnet-4-6', openai:'gpt-4o-mini', gemini:'gemini-2.0-flash', ollama:'llama3.1'};
+const DEFAULT_BASEURL = 'http://localhost:11434';
+
+function setLang(l){
+  lang = l;
+  document.getElementById('btn-tr').classList.toggle('active', l==='tr');
+  document.getElementById('btn-en').classList.toggle('active', l==='en');
+  document.documentElement.lang = l;
+  document.getElementById('tagline').textContent = T[l].tagline;
+  document.getElementById('drop-title').textContent = T[l].dropTitle;
+  document.getElementById('drop-sub').textContent = T[l].dropSub;
+  document.getElementById('clean-btn').textContent = T[l].clean;
+  document.getElementById('download-btn').textContent = T[l].download;
+  document.getElementById('reset-btn').textContent = T[l].reset;
+  document.getElementById('lbl-provider').textContent = T[l].provider;
+  document.getElementById('key-note').textContent = T[l].keyNote;
+  document.getElementById('ollama-note').innerHTML = T[l].ollamaNote;
+  if (headers.length) document.getElementById('preview-label').textContent = T[l].preview(Math.min(10,rows.length), rows.length);
+}
+document.getElementById('btn-tr').onclick = ()=>setLang('tr');
+document.getElementById('btn-en').onclick = ()=>setLang('en');
+
+const providerSel = document.getElementById('provider');
+const modelInput = document.getElementById('model');
+const keyInput = document.getElementById('apikey');
+
+function loadProviderPrefs(){
+  const p = localStorage.getItem('cleancsv_provider') || 'anthropic';
+  providerSel.value = p;
+  modelInput.value = localStorage.getItem('cleancsv_model_'+p) || DEFAULT_MODEL[p];
+  keyInput.value = localStorage.getItem('cleancsv_key_'+p) || '';
+}
+providerSel.onchange = ()=>{
+  localStorage.setItem('cleancsv_provider', providerSel.value);
+  modelInput.value = localStorage.getItem('cleancsv_model_'+providerSel.value) || DEFAULT_MODEL[providerSel.value];
+  keyInput.value = localStorage.getItem('cleancsv_key_'+providerSel.value) || '';
+};
+modelInput.oninput = ()=> localStorage.setItem('cleancsv_model_'+providerSel.value, modelInput.value);
+keyInput.oninput = ()=> localStorage.setItem('cleancsv_key_'+providerSel.value, keyInput.value);
+loadProviderPrefs();
+
+let headers = [], rows = [], cleanedRows = null;
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file-input');
+drop.onclick = ()=> fileInput.click();
+['dragover','dragenter'].forEach(ev=> drop.addEventListener(ev, e=>{e.preventDefault(); drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=> drop.addEventListener(ev, e=>{e.preventDefault(); drop.classList.remove('drag');}));
+drop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file){
+  const name = file.name.toLowerCase();
+  const status = document.getElementById('file-status');
+  status.className='status'; status.textContent='';
+  if (name.endsWith('.csv')){
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const parsed = Papa.parse(e.target.result, {header:true, skipEmptyLines:true});
+      loadData(parsed.meta.fields || [], parsed.data);
+    };
+    reader.readAsText(file);
+  } else if (name.endsWith('.xlsx') || name.endsWith('.xls')){
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(sheet, {defval:''});
+      const cols = data.length ? Object.keys(data[0]) : [];
+      loadData(cols, data);
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    status.className='status err'; status.textContent = T[lang].noFile;
+  }
+}
+
+function loadData(cols, data){
+  headers = cols; rows = data; cleanedRows = null;
+  document.getElementById('file-status').textContent = T[lang].parsed(rows.length, headers.length);
+  document.getElementById('work-card').classList.remove('hidden');
+  document.getElementById('download-btn').classList.add('hidden');
+  document.getElementById('clean-status').textContent = '';
+  renderTable(rows);
+  document.getElementById('preview-label').textContent = T[lang].preview(Math.min(10,rows.length), rows.length);
+}
+
+function renderTable(data){
+  const table = document.getElementById('preview-table');
+  const cols = data.length ? Object.keys(data[0]) : headers;
+  let html = '<thead><tr>' + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+  data.slice(0,10).forEach(r=>{
+    html += '<tr>' + cols.map(c=>`<td>${escapeHtml(String(r[c] ?? ''))}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function extractJson(text){
+  const cleaned = text.replace(/```json|```/g,'').trim();
+  return JSON.parse(cleaned);
+}
+
+async function callProvider(provider, model, key, prompt){
+  if (provider === 'anthropic'){
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({ model, max_tokens: 4096, messages:[{role:'user', content: prompt}] })
+    });
+    if (!res.ok) throw new Error('http-'+res.status);
+    const data = await res.json();
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    return extractJson(text);
+  }
+  if (provider === 'openai'){
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+key },
+      body: JSON.stringify({ model, messages:[{role:'user', content: prompt}], response_format:{type:'json_object'} })
+    });
+    if (!res.ok) throw new Error('http-'+res.status);
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    return extractJson(text);
+  }
+  if (provider === 'gemini'){
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ contents:[{parts:[{text: prompt}]}] })
+    });
+    if (!res.ok) throw new Error('http-'+res.status);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('\n') || '';
+    return extractJson(text);
+  }
+  throw new Error('unknown-provider');
+}
+
+document.getElementById('clean-btn').onclick = async ()=>{
+  const instr = document.getElementById('instructions').value.trim();
+  const status = document.getElementById('clean-status');
+  status.className='status';
+  if (!instr){ status.className='status err'; status.textContent = T[lang].needInstr; return; }
+  const provider = providerSel.value, model = modelInput.value.trim() || DEFAULT_MODEL[provider], key = keyInput.value.trim();
+  if (!key){ status.className='status err'; status.textContent = T[lang].needKey; return; }
+
+  const btn = document.getElementById('clean-btn');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = T[lang].cleaning;
+  status.textContent = '';
+
+  try {
+    const capped = rows.length > 800 ? rows.slice(0,800) : rows;
+    if (rows.length > 800) status.textContent = T[lang].tooBig;
+
+    const prompt = `You are a meticulous data-cleaning engine. You will receive a JSON array of row objects (from a CSV/Excel file) and a plain-language instruction (Turkish or English).
+Apply the instruction to the data. Keep the same column keys unless the instruction explicitly asks to add/remove/rename columns. Keep the same row order and count unless the instruction asks to remove or deduplicate rows.
+Respond with ONLY a raw JSON object of the exact shape {"columns": ["..."], "rows": [{...}, ...]} — no markdown fences, no explanation, no extra text.
+
+Instruction: ${instr}
+
+Columns: ${JSON.stringify(headers)}
+Data (JSON array of row objects): ${JSON.stringify(capped)}`;
+
+    const parsed = await callProvider(provider, model, key, prompt);
+    if (parsed && parsed.rows){
+      cleanedRows = parsed.rows;
+      renderTable(cleanedRows);
+      document.getElementById('preview-label').textContent =
+        (lang==='tr' ? `Temizlenmiş veri — ilk ${Math.min(10,cleanedRows.length)} satır` : `Cleaned data — first ${Math.min(10,cleanedRows.length)} rows`);
+      document.getElementById('download-btn').classList.remove('hidden');
+      document.getElementById('reset-btn').classList.remove('hidden');
+      status.textContent = T[lang].cleaned;
+    } else {
+      throw new Error('bad-shape');
+    }
+  } catch(err){
+    status.className='status err';
+    status.textContent = (err && String(err.message||'').startsWith('http')) ? T[lang].errCall : T[lang].errParse;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+};
+
+document.getElementById('download-btn').onclick = ()=>{
+  if (!cleanedRows) return;
+  const csv = Papa.unparse(cleanedRows);
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'cleaned.csv'; a.click();
+  URL.revokeObjectURL(url);
+};
+
+document.getElementById('reset-btn').onclick = ()=>{
+  headers=[]; rows=[]; cleanedRows=null;
+  document.getElementById('work-card').classList.add('hidden');
+  document.getElementById('file-status').textContent='';
+  document.getElementById('instructions').value='';
+  fileInput.value='';
+};
+</script>
+</body>
+</html>
